@@ -7,10 +7,8 @@ import {
     Clock,
     TrendingUp,
     Flag,
-    AlertCircle,
 } from 'lucide-react';
 import { apiService } from '../services/api';
-import type { Goal } from '../services/api';
 import { useLogStore } from '../stores';
 import './Goals.css';
 

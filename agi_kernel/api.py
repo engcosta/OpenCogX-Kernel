@@ -550,11 +550,15 @@ async def websocket_logs(websocket: WebSocket):
     await log_manager.connect(websocket)
     try:
         while True:
-            # Keep connection alive
-            await websocket.receive_text()
+            # Wait for any message (handles disconnect properly)
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                break
     except WebSocketDisconnect:
-        log_manager.disconnect(websocket)
-    except Exception:
+        pass
+    except Exception as e:
+        logger.warning("websocket_error", error=str(e))
+    finally:
         log_manager.disconnect(websocket)
 
 

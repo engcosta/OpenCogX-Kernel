@@ -1,20 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import {
-    MessageSquareText,
     Send,
     Bot,
     User,
     Clock,
     Target,
     Cpu,
-    Sparkles,
     Trash2,
     Settings2,
     BookOpen,
+    X,
 } from 'lucide-react';
 import { apiService } from '../services/api';
-import type { AskRequest, AskResponse } from '../services/api';
+import type { AskRequest } from '../services/api';
 import { useLogStore, useNotificationStore } from '../stores';
 import './Ask.css';
 
@@ -37,6 +36,7 @@ export function Ask() {
     const [strictMode, setStrictMode] = useState(true);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [showSettings, setShowSettings] = useState(false);
+    const [selectedContext, setSelectedContext] = useState<any[] | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const { addLog } = useLogStore();
@@ -276,7 +276,11 @@ export function Ask() {
                                                     </span>
                                                 )}
                                                 {msg.metadata.context && msg.metadata.context.length > 0 && (
-                                                    <span className="meta-item">
+                                                    <span
+                                                        className="meta-item clickable"
+                                                        onClick={() => setSelectedContext(msg.metadata.context || null)}
+                                                        title="Click to view sources"
+                                                    >
                                                         <BookOpen size={12} />
                                                         {msg.metadata.context.length} sources
                                                     </span>
@@ -331,7 +335,40 @@ export function Ask() {
                     </div>
                 </form>
             </div>
-        </div>
+
+            {/* Context Dialog */}
+            {
+                selectedContext && (
+                    <div className="dialog-overlay" onClick={() => setSelectedContext(null)}>
+                        <div className="dialog-content" onClick={e => e.stopPropagation()}>
+                            <div className="dialog-header">
+                                <h3>Context Used</h3>
+                                <button className="btn btn-ghost close-btn" onClick={() => setSelectedContext(null)}>
+                                    <X size={20} />
+                                </button>
+                            </div>
+                            <div className="dialog-body">
+                                {selectedContext.map((item, i) => (
+                                    <div key={i} className="context-item">
+                                        <div className="context-header">
+                                            <span className="context-source">
+                                                {item.source || 'Unknown Source'}
+                                            </span>
+                                            <span>{item.type || 'memory'}</span>
+                                        </div>
+                                        <div className="context-content">
+                                            {typeof item.content === 'string'
+                                                ? item.content
+                                                : (item.content?.text || JSON.stringify(item.content))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 }
 

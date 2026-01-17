@@ -36,14 +36,17 @@ console = Console()
 def print_banner():
     """Print the kernel banner."""
     banner = """
-    ╔══════════════════════════════════════════════════════╗
-    ║                                                      ║
-    ║   🧠 AGI KERNEL POC v0.1.0                          ║
-    ║   An open-source, self-evolving cognitive system    ║
-    ║                                                      ║
-    ╚══════════════════════════════════════════════════════╝
+    +------------------------------------------------------+
+    |                                                      |
+    |   AGI KERNEL POC v0.1.0                              |
+    |   An open-source, self-evolving cognitive system     |
+    |                                                      |
+    +------------------------------------------------------+
     """
-    console.print(Panel(banner, border_style="cyan"))
+    try:
+        console.print(Panel(banner, border_style="cyan"))
+    except UnicodeEncodeError:
+        print(banner)
 
 
 def cmd_serve(args):

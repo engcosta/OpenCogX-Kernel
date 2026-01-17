@@ -34,11 +34,19 @@ function App() {
     const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/logs/socket';
     let ws: WebSocket | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout>;
+    let isConnected = false;
 
     const connect = () => {
-      ws = new WebSocket(wsUrl);
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch (error) {
+        console.error('Failed to create WebSocket:', error);
+        reconnectTimeout = setTimeout(connect, 3000);
+        return;
+      }
 
       ws.onopen = () => {
+        isConnected = true;
         addLog({
           level: 'success',
           source: 'system',
@@ -61,20 +69,33 @@ function App() {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        if (isConnected) {
+          addLog({
+            level: 'warning',
+            source: 'system',
+            message: 'Log stream disconnected, reconnecting...',
+          });
+        }
+        isConnected = false;
         reconnectTimeout = setTimeout(connect, 3000);
       };
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        ws?.close();
+      ws.onerror = () => {
+        if (!isConnected) {
+          console.warn('WebSocket connection failed, will retry in 3s. Ensure backend is running on', wsUrl);
+        }
       };
     };
 
     connect();
 
     return () => {
-      if (ws) ws.close();
+      isConnected = false;
+      if (ws) {
+        ws.onclose = null;
+        ws.close();
+      }
       clearTimeout(reconnectTimeout);
     };
   }, [addLog]);

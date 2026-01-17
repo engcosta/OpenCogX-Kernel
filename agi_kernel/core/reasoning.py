@@ -389,10 +389,13 @@ class ReasoningController:
                     "success": True, 
                     "answer": "I do not have enough information in my database to answer this question.", 
                     "confidence": 1.0, 
-                    "source": "strict_compliance"
+                    "source": "strict_compliance",
+                    "context": {"memories": []}
                 }
-            return {"success": False, "answer": None, "confidence": 0.0}
+            return {"success": False, "answer": None, "confidence": 0.0, "context": {"memories": []}}
         
+        memory_dicts = [m.to_dict() if hasattr(m, 'to_dict') else str(m) for m in memories]
+
         # Use LLM to synthesize answer from memories
         if self.llm_plugin:
             context_text = "\n".join([
@@ -427,6 +430,7 @@ ANSWER (Strictly from context):"""
                 "answer": answer,
                 "confidence": 0.7,
                 "source": "memory_recall",
+                "context": {"memories": memory_dicts}
             }
         
         # Return first memory as answer
@@ -435,6 +439,7 @@ ANSWER (Strictly from context):"""
             "answer": memories[0].content if hasattr(memories[0], 'content') else memories[0].answer,
             "confidence": 0.5,
             "source": "direct_recall",
+            "context": {"memories": memory_dicts}
         }
     
     async def _execute_causal(
@@ -576,8 +581,10 @@ ANSWER (Strictly from context):"""
         episodes = await memory.recall(question)
         
         if not episodes:
-            return {"success": False, "answer": None, "confidence": 0.0}
+            return {"success": False, "answer": None, "confidence": 0.0, "context": {"memories": []}}
         
+        memory_dicts = [e.to_dict() if hasattr(e, 'to_dict') else str(e) for e in episodes]
+
         # Use analogy from similar case
         similar_context = "\n".join([
             f"Q: {e.question}\nA: {e.answer}" 
@@ -595,6 +602,7 @@ ANSWER (Strictly from context):"""
             "answer": answer,
             "confidence": 0.6,
             "source": "analogical",
+            "context": {"memories": memory_dicts}
         }
     
     async def _execute_abductive(
@@ -653,6 +661,12 @@ ANSWER (Strictly from context):"""
                  if r.get("source") == "strict_compliance":
                      return r
 
+        # Collect all memories from results
+        all_memories = []
+        for r in results:
+             if "context" in r and "memories" in r["context"]:
+                 all_memories.extend(r["context"]["memories"])
+
         # Verify the results
         if results and self.llm_plugin:
             answers = [r["answer"] for r in results]
@@ -684,6 +698,7 @@ FINAL ANSWER (Strictly from inputs):"""
                 "confidence": max(r["confidence"] for r in results),
                 "sources": [r["source"] for r in results],
                 "source": "hybrid",
+                "context": {"memories": all_memories}
             }
         
         if results:
