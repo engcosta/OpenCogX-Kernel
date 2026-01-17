@@ -41,6 +41,7 @@ class ReasoningStrategy(Enum):
     ANALOGICAL = "analogical"            # Find similar cases
     ABDUCTIVE = "abductive"              # Best explanation
     HYBRID = "hybrid"                    # Combine strategies
+    AUTO = "auto"                        # Automatically select strategy
 
 
 @dataclass
@@ -90,8 +91,10 @@ class ReasoningContext:
     has_vector: bool = False
     complexity_estimate: float = 0.5  # 0 = simple, 1 = complex
     time_constraint: Optional[float] = None  # Max seconds allowed
+    time_constraint: Optional[float] = None  # Max seconds allowed
     previous_attempts: int = 0
     previous_strategy: Optional[ReasoningStrategy] = None
+    strict_mode: bool = False  # If True, deny using outside knowledge
 
 
 class ReasoningController:
@@ -268,6 +271,20 @@ class ReasoningController:
         start_time = datetime.utcnow()
         reason = context.get("strategy_reason", "unknown")
         
+        # Resolve AUTO strategy
+        if strategy == ReasoningStrategy.AUTO:
+            # Reconstruct context object for selection
+            ctx_obj = ReasoningContext(
+                question=question,
+                available_memory_types=context.get("available_memory_types", []),
+                has_graph=context.get("has_graph", False),
+                has_vector=context.get("has_vector", False),
+                previous_attempts=context.get("previous_attempts", 0),
+                strict_mode=context.get("strict_mode", False),
+            )
+            strategy, reason = self.choose_strategy(ctx_obj)
+            context["strategy_reason"] = reason
+
         # Create decision record
         decision = ReasoningDecision(
             strategy=strategy,
@@ -290,7 +307,7 @@ class ReasoningController:
         try:
             # Execute based on strategy
             if strategy == ReasoningStrategy.FAST_RECALL:
-                result = await self._execute_fast_recall(question, memory)
+                result = await self._execute_fast_recall(question, memory, context)
             elif strategy == ReasoningStrategy.CAUSAL_REASONING:
                 result = await self._execute_causal(question, context, world)
             elif strategy == ReasoningStrategy.SIMULATION:
@@ -347,31 +364,62 @@ class ReasoningController:
             duration_ms=decision.duration_ms,
         )
         
+        if result:
+            result["strategy"] = strategy.value
+        
         return result
     
     async def _execute_fast_recall(
         self,
         question: str,
         memory: Optional[Memory],
+        context: Optional[dict] = None,
     ) -> dict:
         """Execute fast memory recall."""
         if not memory:
             return {"success": False, "answer": None, "confidence": 0.0}
         
-        # Recall relevant memories
+        #Recall relevant memories
         memories = await memory.recall(question, limit=5)
         
         if not memories:
+            # If strict mode, fail immediately if no memories found
+            if context and context.get("strict_mode"):
+                return {
+                    "success": True, 
+                    "answer": "I do not have enough information in my database to answer this question.", 
+                    "confidence": 1.0, 
+                    "source": "strict_compliance"
+                }
             return {"success": False, "answer": None, "confidence": 0.0}
         
         # Use LLM to synthesize answer from memories
         if self.llm_plugin:
-            context = "\n".join([
+            context_text = "\n".join([
                 str(m.content if hasattr(m, 'content') else m.answer)
                 for m in memories
             ])
+            
+            # Use stricter prompt if requested
+            is_strict = context and context.get("strict_mode")
+            if is_strict:
+                prompt = f"""You are a STRICT knowledge engine.
+answer ONLY using the provided context below. 
+Do NOT use ANY outside knowledge. 
+If the answer is not in the context, say "I do not have enough information."
+
+CONTEXT:
+{context_text}
+
+QUESTION: 
+{question}
+
+ANSWER (Strictly from context):"""
+            else:
+                prompt = f"Based on this context:\n{context_text}\n\nAnswer: {question}"
+
             answer = await self.llm_plugin.generate(
-                prompt=f"Based on this context:\n{context}\n\nAnswer: {question}",
+                prompt=prompt,
                 model_type="solver",
             )
             return {
@@ -589,7 +637,7 @@ class ReasoningController:
         results = []
         
         # Try fast recall first
-        recall_result = await self._execute_fast_recall(question, memory)
+        recall_result = await self._execute_fast_recall(question, memory, context)
         if recall_result["success"]:
             results.append(recall_result)
         
@@ -599,11 +647,35 @@ class ReasoningController:
             if causal_result["success"]:
                 results.append(causal_result)
         
+        # Return strict compliance immediately if strictly enforced
+        if context.get("strict_mode") and results:
+             for r in results:
+                 if r.get("source") == "strict_compliance":
+                     return r
+
         # Verify the results
         if results and self.llm_plugin:
             answers = [r["answer"] for r in results]
+            
+            is_strict = context.get("strict_mode", False)
+            if is_strict:
+                prompt = f"""You are a STRICT knowledge aggregator.
+Synthesize the provided answers into a final answer.
+Do NOT use ANY outside knowledge.
+If the provided answers say "I do not have enough information", then your answer must be "I do not have enough information."
+
+POSSIBLE ANSWERS FROM DATABASE:
+{answers}
+
+QUESTION:
+{question}
+
+FINAL ANSWER (Strictly from inputs):"""
+            else:
+                prompt = f"Question: {question}\nPossible answers: {answers}\n\nBest answer:"
+                
             final = await self.llm_plugin.generate(
-                prompt=f"Question: {question}\nPossible answers: {answers}\n\nBest answer:",
+                prompt=prompt,
                 model_type="solver",
             )
             return {

@@ -122,6 +122,18 @@ class StatusResponse(BaseModel):
     ingestion: dict
 
 
+
+class CleanRequest(BaseModel):
+    confirm: bool = False
+
+
+class AskRequest(BaseModel):
+    question: str
+    strategy: str = "hybrid"  # hybrid, search, reason
+    strict_mode: bool = True  # Default to True per user requirement
+
+
+
 # Endpoints
 @app.get("/")
 async def root():
@@ -138,8 +150,98 @@ async def root():
             "/evaluate",
             "/memory",
             "/goals",
+            "/clean",
+            "/ask",
         ],
     }
+
+
+@app.post("/clean")
+async def clean_databases(request: CleanRequest):
+    """Clear both Neo4j and Qdrant databases."""
+    if not request.confirm:
+        raise HTTPException(status_code=400, detail="Must set confirm=True to clear databases")
+        
+    if kernel is None:
+        raise HTTPException(status_code=503, detail="Kernel not initialized")
+    
+    try:
+        # Clear Graph
+        if kernel.graph:
+            await kernel.graph.run_cypher("MATCH (n) DETACH DELETE n")
+            
+        # Clear Vector
+        if kernel.vector and kernel.vector._client:
+            try:
+                kernel.vector._client.delete_collection(kernel.vector.collection_name)
+                # Re-init collection immediately
+                from qdrant_client.models import VectorParams, Distance
+                kernel.vector._client.create_collection(
+                    collection_name=kernel.vector.collection_name,
+                    vectors_config=VectorParams(size=kernel.vector.vector_size, distance=Distance.COSINE),
+                )
+            except Exception as v_err:
+                logger.warning("vector_clear_failed", error=str(v_err))
+
+        logger.info("databases_cleared_via_api")
+        return {"status": "success", "message": "Databases cleared successfully"}
+        
+    except Exception as e:
+        logger.error("clean_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ask")
+async def ask_question(request: AskRequest):
+    """Ask a question using the full cognitive architecture."""
+    if kernel is None:
+        raise HTTPException(status_code=503, detail="Kernel not initialized")
+
+    try:
+        from agi_kernel.core.reasoning import ReasoningContext, ReasoningStrategy
+        
+        # Determine strategy
+        strategy_enum = ReasoningStrategy.HYBRID
+        if request.strategy.lower() == "search":
+            strategy_enum = ReasoningStrategy.FAST_RECALL
+        elif request.strategy.lower() == "reason":
+            strategy_enum = ReasoningStrategy.CAUSAL_REASONING
+        elif request.strategy.lower() == "auto":
+            strategy_enum = ReasoningStrategy.AUTO
+            
+        # Build Context
+        ctx = ReasoningContext(
+            question=request.question,
+            available_memory_types=["semantic", "episodic"],
+            has_vector=kernel.vector is not None,
+            has_graph=kernel.graph is not None,
+            strict_mode=request.strict_mode,
+            # user_intent="user_query"  <-- Removed unknown field
+        )
+        
+        # Execute reasoning
+        start_time = asyncio.get_event_loop().time()
+        response = await kernel.reasoning.execute(
+            strategy=strategy_enum,
+            question=request.question,
+            context=ctx.__dict__,
+            memory=kernel.memory,
+            world=kernel.world
+        )
+        duration = asyncio.get_event_loop().time() - start_time
+        
+        return {
+            "question": request.question,
+            "answer": response.get("answer"),
+            "confidence": response.get("confidence", 0.0),
+            "strategy_used": response.get("strategy", request.strategy),
+            "duration_seconds": duration,
+            "context_used": response.get("context", {}).get("memories", [])
+        }
+        
+    except Exception as e:
+        logger.error("ask_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")

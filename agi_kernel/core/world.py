@@ -159,17 +159,19 @@ class WorldModel:
     - Enables simulation, prediction, and planning
     """
     
-    def __init__(self, graph_plugin=None):
+    def __init__(self, graph_plugin=None, persistence_plugin=None):
         """
         Initialize the World Model.
         
         Args:
             graph_plugin: Optional Neo4j plugin for persistent storage
+            persistence_plugin: Optional SQLite plugin for event logging
         """
         self.states: dict[str, State] = {}
         self.events: dict[str, Event] = {}
         self.transitions: list[StateTransition] = []
         self.graph_plugin = graph_plugin
+        self.persistence_plugin = persistence_plugin
         
         logger.info("world_model_initialized")
     
@@ -212,6 +214,10 @@ class WorldModel:
         if self.graph_plugin:
             await self.graph_plugin.store_state(new_state)
             await self.graph_plugin.store_event(event)
+        
+        # Persist event log (audit)
+        if self.persistence_plugin:
+            await self.persistence_plugin.log_world_event(event.to_dict())
         
         return new_state
     

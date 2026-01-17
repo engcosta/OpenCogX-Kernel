@@ -137,8 +137,19 @@ class GoalEngine:
         self.failed_goals: list[Goal] = []
         self.manual_goals: list[Goal] = []
         self.graph_plugin = graph_plugin
+        self.persistence_plugin = None  # Will be injected
         
         logger.info("goal_engine_initialized")
+
+    async def initialize_persistence(self, persistence_plugin):
+        """Load persistent goals."""
+        self.persistence_plugin = persistence_plugin
+        if self.persistence_plugin:
+            rows = await self.persistence_plugin.get_active_goals()
+            for row in rows:
+                goal = Goal.from_dict(row)
+                self.active_goals[goal.id] = goal
+            logger.info("goals_restored_from_db", count=len(rows))
 
     def add(self, goal: Goal) -> None:
         """
@@ -318,7 +329,7 @@ class GoalEngine:
         
         return goals
     
-    def prioritize(self, goals: list[Goal]) -> Goal | None:
+    async def prioritize(self, goals: list[Goal]) -> Goal | None:
         """
         Select the highest priority goal.
         
@@ -354,6 +365,10 @@ class GoalEngine:
         best.status = "active"
         self.active_goals[best.id] = best
         
+        # Persist status change
+        if self.persistence_plugin:
+            await self.save_goal(best) 
+
         logger.info(
             "goal_prioritized",
             goal_id=best.id,
@@ -363,7 +378,12 @@ class GoalEngine:
         
         return best
     
-    def complete_goal(
+    async def save_goal(self, goal: Goal) -> None:
+        """Helper to save goal state to DB."""
+        if self.persistence_plugin:
+            await self.persistence_plugin.upsert_goal(goal.to_dict())
+    
+    async def complete_goal(
         self,
         goal_id: str,
         actual_gain: float,
@@ -391,6 +411,9 @@ class GoalEngine:
         else:
             goal.status = "failed"
             self.failed_goals.append(goal)
+        
+        # Persist completion
+        await self.save_goal(goal)
         
         logger.info(
             "goal_completed",

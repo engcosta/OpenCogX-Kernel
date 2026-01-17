@@ -73,6 +73,8 @@ class LoopIteration:
             "timestamp": self.timestamp.isoformat(),
             "goal_type": self.goal_type,
             "question": self.question[:100],
+            "question_type": self.question_type,
+            "answer": self.answer,
             "strategy": self.strategy_used,
             "verdict": self.verdict,
             "confidence": self.confidence,
@@ -105,6 +107,7 @@ class LearningLoop:
         llm_plugin: Optional[LLMPlugin] = None,
         vector_plugin: Optional[VectorPlugin] = None,
         graph_plugin: Optional[GraphPlugin] = None,
+        persistence_plugin: Optional[Any] = None,
         max_retries: int = 3,
     ):
         """
@@ -130,6 +133,7 @@ class LearningLoop:
         self.llm = llm_plugin
         self.vector = vector_plugin
         self.graph = graph_plugin
+        self.persistence = persistence_plugin
         
         self.max_retries = max_retries
         
@@ -169,7 +173,7 @@ class LearningLoop:
                 )]
             
             # Step B: Goal Prioritization
-            goal = self.goals.prioritize(generated_goals)
+            goal = await self.goals.prioritize(generated_goals)
             
             if goal:
                 iteration.goal_type = goal.type.value
@@ -242,6 +246,17 @@ class LearningLoop:
         end_time = datetime.utcnow()
         iteration.duration_ms = (end_time - start_time).total_seconds() * 1000
         
+        if self.persistence:
+            iteration_data = iteration.to_dict()
+            iteration_data["knowledge_gained"] = int(iteration.knowledge_gained)
+            iteration_data["gap_recorded"] = int(iteration.gap_recorded)
+            if goal:
+                iteration_data["goal_id"] = goal.id
+            else:
+                iteration_data["goal_id"] = None
+                
+            await self.persistence.log_learning_iteration(iteration_data)
+
         # Store iteration
         self.iterations.append(iteration)
         

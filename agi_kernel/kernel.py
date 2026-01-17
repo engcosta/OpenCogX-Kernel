@@ -32,6 +32,7 @@ from agi_kernel.core.meta import MetaCognition
 from agi_kernel.plugins.llm import LLMPlugin
 from agi_kernel.plugins.vector import VectorPlugin
 from agi_kernel.plugins.graph import GraphPlugin
+from agi_kernel.plugins.persistence import PersistencePlugin
 from agi_kernel.learning_loop import LearningLoop
 from agi_kernel.ingestion import IngestionPipeline
 from agi_kernel.metrics import MetricsCollector
@@ -105,6 +106,7 @@ class Kernel:
         self.llm: Optional[LLMPlugin] = None
         self.vector: Optional[VectorPlugin] = None
         self.graph: Optional[GraphPlugin] = None
+        self.persistence: Optional[PersistencePlugin] = None
         
         if use_plugins:
             self._init_plugins()
@@ -161,6 +163,14 @@ class Kernel:
             logger.info("graph_plugin_initialized")
         except Exception as e:
             logger.warning("graph_plugin_failed", error=str(e))
+
+        try:
+            # Persistence Plugin
+            self.persistence = PersistencePlugin(db_path="agi_state.db")
+            # We delay goals injection until async init
+            logger.info("persistence_plugin_initialized")
+        except Exception as e:
+            logger.warning("persistence_plugin_failed", error=str(e))
     
     def _init_derived_components(self) -> None:
         """Initialize components that depend on core and plugins."""
@@ -174,6 +184,7 @@ class Kernel:
             llm_plugin=self.llm,
             vector_plugin=self.vector,
             graph_plugin=self.graph,
+            persistence_plugin=self.persistence,
             max_retries=int(os.getenv("MAX_RETRY_ON_FAIL", "3")),
         )
         
@@ -204,6 +215,14 @@ class Kernel:
         if self.graph:
             status["graph"] = await self.graph.initialize()
         
+        if self.persistence:
+            status["persistence"] = await self.persistence.initialize()
+            # Inject into goals and load state
+            await self.goals.initialize_persistence(self.persistence)
+            
+            # Inject into world
+            self.world.persistence_plugin = self.persistence
+
         if self.llm:
             status["llm"] = await self.llm.check_health()
         
