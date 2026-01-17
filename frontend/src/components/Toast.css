@@ -1,0 +1,114 @@
+.toast-container {
+    position: fixed;
+    top: var(--spacing-lg);
+    right: var(--spacing-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    z-index: 1000;
+    pointer-events: none;
+}
+
+.toast {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    min-width: 320px;
+    max-width: 420px;
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    animation: slideIn var(--transition-base) forwards;
+    pointer-events: auto;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.toast-icon {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+}
+
+.toast-success {
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.toast-success .toast-icon {
+    color: var(--color-success);
+}
+
+.toast-error {
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.toast-error .toast-icon {
+    color: var(--color-error);
+}
+
+.toast-warning {
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.toast-warning .toast-icon {
+    color: var(--color-warning);
+}
+
+.toast-info {
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.toast-info .toast-icon {
+    color: var(--color-info);
+}
+
+.toast-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.toast-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.toast-message {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+}
+
+.toast-close {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.toast-close:hover {
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-primary);
+}

@@ -1,0 +1,22 @@
+/* App-specific styles */
+
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  padding: var(--spacing-xl);
+  max-width: calc(100vw - var(--sidebar-width));
+  min-height: 100vh;
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 0;
+    padding: var(--spacing-md);
+    max-width: 100vw;
+  }
+}

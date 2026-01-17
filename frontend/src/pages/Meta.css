@@ -1,0 +1,108 @@
+.meta-page {
+    animation: fadeIn var(--transition-base);
+}
+
+.meta-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+}
+
+.meta-stats .stat-card {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+}
+
+.meta-stats .stat-card svg {
+    color: var(--color-accent-secondary);
+}
+
+.meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-lg);
+}
+
+.knowledge-content,
+.changes-content {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.knowledge-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.knowledge-item {
+    display: flex;
+    flex-direction: column;
+    padding: var(--spacing-md);
+    background: var(--color-bg-tertiary);
+    border-radius: var(--radius-md);
+}
+
+.knowledge-key {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: capitalize;
+    margin-bottom: var(--spacing-xs);
+}
+
+.knowledge-value {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--color-text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.changes-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.change-item {
+    padding: var(--spacing-md);
+    background: var(--color-bg-tertiary);
+    border-radius: var(--radius-md);
+    border-left: 3px solid var(--color-warning);
+}
+
+.change-header {
+    margin-bottom: var(--spacing-sm);
+}
+
+.change-content {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-secondary);
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+@media (max-width: 1024px) {
+    .meta-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .meta-stats {
+        grid-template-columns: 1fr;
+    }
+}

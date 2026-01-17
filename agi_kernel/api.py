@@ -20,13 +20,80 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional
 import structlog
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from agi_kernel.kernel import Kernel
 
 logger = structlog.get_logger()
+
+# Log Streaming
+class LogManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+        
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        
+    async def broadcast(self, message: dict):
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_json(message)
+            except Exception:
+                self.disconnect(connection)
+
+log_manager = LogManager()
+
+def broadcast_processor(logger, method_name, event_dict):
+    """Processor to broadcast logs to WebSocket."""
+    try:
+        # Only broadcast if there are listeners
+        if not log_manager.active_connections:
+            return event_dict
+            
+        loop = asyncio.get_running_loop()
+        if loop.is_running():
+            log_entry = {
+                "id": str(asyncio.get_event_loop().time()),
+                "timestamp": event_dict.get("timestamp"),
+                "level": event_dict.get("level", method_name),
+                "source": event_dict.get("logger", "kernel"),
+                "message": str(event_dict.get("event", "")),
+                "data": {k: v for k, v in event_dict.items() if k not in ["timestamp", "level", "logger", "event", "positional_args"]}
+            }
+            loop.create_task(log_manager.broadcast(log_entry))
+    except (RuntimeError, NameError):
+        pass
+    except Exception:
+        pass
+        
+    return event_dict
+
+# Re-configure structlog to include broadcaster
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        broadcast_processor,
+        structlog.dev.ConsoleRenderer(),
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
 
 # Global kernel instance
 kernel: Optional[Kernel] = None
@@ -475,6 +542,20 @@ async def collect_snapshot():
     )
     
     return snapshot.to_dict()
+
+
+@app.websocket("/logs/socket")
+async def websocket_logs(websocket: WebSocket):
+    """WebSocket endpoint for real-time logs."""
+    await log_manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        log_manager.disconnect(websocket)
+    except Exception:
+        log_manager.disconnect(websocket)
 
 
 def run_server(host: str = "0.0.0.0", port: int = 8000):

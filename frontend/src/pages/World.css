@@ -1,0 +1,101 @@
+.world-page {
+    animation: fadeIn var(--transition-base);
+}
+
+.world-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+}
+
+.world-stats .stat-card {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+}
+
+.world-stats .stat-card svg {
+    color: var(--color-accent-primary);
+}
+
+.world-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-lg);
+}
+
+.items-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.world-item {
+    padding: var(--spacing-md);
+    background: var(--color-bg-tertiary);
+    border-radius: var(--radius-md);
+    border-left: 3px solid var(--color-accent-primary);
+}
+
+.world-item.event {
+    border-left-color: var(--color-warning);
+}
+
+.item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--spacing-sm);
+}
+
+.item-id {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+}
+
+.item-time {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.625rem;
+    color: var(--color-text-muted);
+}
+
+.item-type {
+    font-size: 0.625rem;
+}
+
+.item-content {
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-secondary);
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 150px;
+    margin: 0;
+}
+
+@media (max-width: 1024px) {
+    .world-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .world-stats {
+        grid-template-columns: 1fr;
+    }
+}

@@ -1,0 +1,105 @@
+.clean-page {
+    animation: fadeIn var(--transition-base);
+}
+
+.clean-container {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: var(--spacing-lg);
+    align-items: start;
+}
+
+.clean-card {
+    text-align: center;
+    padding: var(--spacing-2xl);
+}
+
+.warning-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto var(--spacing-xl);
+    background: var(--color-error-bg);
+    border-radius: 50%;
+    color: var(--color-error);
+}
+
+.clean-card h2 {
+    color: var(--color-error);
+    margin-bottom: var(--spacing-md);
+}
+
+.clean-card>p {
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-md);
+}
+
+.delete-list {
+    text-align: left;
+    padding-left: var(--spacing-xl);
+    margin-bottom: var(--spacing-lg);
+}
+
+.delete-list li {
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.warning-text {
+    color: var(--color-error);
+    margin-bottom: var(--spacing-xl);
+}
+
+.confirm-section {
+    margin-bottom: var(--spacing-xl);
+}
+
+.confirm-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    cursor: pointer;
+}
+
+.confirm-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-error);
+}
+
+.confirm-label span {
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+}
+
+.action-buttons {
+    display: flex;
+    justify-content: center;
+}
+
+.success-message {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-lg);
+    padding: var(--spacing-md);
+    background: var(--color-success-bg);
+    color: var(--color-success);
+    border-radius: var(--radius-md);
+}
+
+.local-actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+@media (max-width: 1024px) {
+    .clean-container {
+        grid-template-columns: 1fr;
+    }
+}
