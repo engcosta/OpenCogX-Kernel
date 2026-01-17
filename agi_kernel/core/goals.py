@@ -187,26 +187,34 @@ class GoalEngine:
                 goal.priority = max(goal.priority, 1.0)
                 goals.append(goal)
         
+        # Helper to check if similar goal exists
+        active_signatures = {
+            (g.type, g.description) for g in self.active_goals.values()
+        }
+        
+        def is_duplicate(g: Goal) -> bool:
+            return (g.type, g.description) in active_signatures
+
         # 1. Detect uncertainty (low confidence states)
         uncertainty_goals = self._detect_uncertainty(world)
-        goals.extend(uncertainty_goals)
+        goals.extend([g for g in uncertainty_goals if not is_duplicate(g)])
         
         # 2. Detect contradictions
         contradiction_goals = self._detect_contradictions(memory)
-        goals.extend(contradiction_goals)
+        goals.extend([g for g in contradiction_goals if not is_duplicate(g)])
         
         # 3. Detect knowledge gaps (from graph)
         if self.graph_plugin:
             gap_goals = await self._detect_knowledge_gaps()
-            goals.extend(gap_goals)
+            goals.extend([g for g in gap_goals if not is_duplicate(g)])
         
         # 4. Analyze failed episodes for improvement
         failure_goals = self._analyze_failures(memory)
-        goals.extend(failure_goals)
+        goals.extend([g for g in failure_goals if not is_duplicate(g)])
         
         # 5. Explore unexplored areas
         exploration_goals = self._generate_exploration_goals(memory, world)
-        goals.extend(exploration_goals)
+        goals.extend([g for g in exploration_goals if not is_duplicate(g)])
         
         logger.info(
             "goals_generated",
@@ -353,7 +361,12 @@ class GoalEngine:
         available = [g for g in goals if g.type not in active_types]
         
         if not available:
-            available = goals  # All types active, pick from all
+            # If all candidate goals are of types we are ALREADY working on,
+            # we should generally NOT pick them to avoid duplication.
+            # However, if we have NOTHING else to do, we might double down (parallelism).
+            # For now, let's strictly avoid duplication to fix the repetition issue.
+            logger.debug("all_goals_already_active_skipping")
+            return None
         
         # Sort by priority * expected_gain
         available.sort(

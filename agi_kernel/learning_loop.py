@@ -79,6 +79,7 @@ class LoopIteration:
             "verdict": self.verdict,
             "confidence": self.confidence,
             "duration_ms": self.duration_ms,
+            "issues": self.issues,
         }
 
 
