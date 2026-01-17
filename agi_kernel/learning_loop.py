@@ -143,30 +143,25 @@ class LearningLoop:
     async def step(self) -> LoopIteration:
         """
         Execute a single learning iteration.
-        
-        This is the core learning cycle:
-        1. Generate goals from current state
-        2. Prioritize and select a goal
-        3. Generate a question to address the goal
-        4. Attempt to answer using reasoning
-        5. Critique the answer
-        6. Record the outcome
-        
-        Returns:
-            Record of this iteration
         """
         start_time = datetime.utcnow()
         self.iteration_count += 1
         
         iteration = LoopIteration(id=self.iteration_count)
         
+        # Rich console log
+        from rich.console import Console
+        from rich.panel import Panel
+        console = Console()
+        
+        console.print(f"\n[bold white]🔄 Learning Iteration #{self.iteration_count}[/bold white]")
+        
         try:
             # Step A: Goal Generation
-            logger.info("step_a_goal_generation")
-            generated_goals = self.goals.generate(self.memory, self.world)
+            # logger.info("step_a_goal_generation")
+            generated_goals = await self.goals.generate(self.memory, self.world)
             
             if not generated_goals:
-                # Create exploration goal if none generated
                 generated_goals = [Goal(
                     type=GoalType.EXPLORE_UNKNOWN,
                     description="Explore knowledge domain",
@@ -180,22 +175,19 @@ class LearningLoop:
                 iteration.goal_type = goal.type.value
                 iteration.goal_description = goal.description
                 
-                logger.info(
-                    "goal_selected",
-                    goal_type=goal.type.value,
-                    priority=goal.priority,
-                )
+                logger.info("goal_selected", goal_type=goal.type.value)
+                console.print(f"   [yellow]🎯 Goal:[/yellow] {goal.description} [dim]({goal.type.value})[/dim]")
             
             # Step C: Question Generation
-            logger.info("step_c_question_generation")
+            # logger.info("step_c_question_generation")
             question = await self._generate_question(goal)
             iteration.question = question
             iteration.question_type = self._classify_question(question)
             
-            logger.info("question_generated", question=question[:100])
+            # console.print(f"   [cyan]❓ Question:[/cyan] {question}")
             
             # Step D: Answer Attempt
-            logger.info("step_d_answer_attempt")
+            # logger.info("step_d_answer_attempt")
             result = await self._attempt_answer(question, goal)
             
             iteration.answer = result.get("answer", "")
@@ -203,7 +195,7 @@ class LearningLoop:
             iteration.confidence = result.get("confidence", 0.0)
             
             # Step E: Critique
-            logger.info("step_e_critique")
+            # logger.info("step_e_critique")
             critique = await self._critique_answer(
                 question=question,
                 answer=result.get("answer", ""),
@@ -213,18 +205,21 @@ class LearningLoop:
             iteration.verdict = critique.get("verdict", "FAIL")
             iteration.issues = critique.get("issues", [])
             
-            logger.info(
-                "critique_complete",
-                verdict=iteration.verdict,
-                issues=len(iteration.issues),
-            )
+            verdict_color = "green" if iteration.verdict == "PASS" else "red"
+            console.print(f"   [{verdict_color}]⚖️  Critique Verdict: {iteration.verdict}[/{verdict_color}]")
+            if iteration.issues:
+                for issue in iteration.issues:
+                    console.print(f"      [dim]- {issue}[/dim]")
             
             # Step F: Record Outcome
-            logger.info("step_f_record_outcome")
             await self._record_outcome(iteration, goal)
             
+            if iteration.knowledge_gained:
+                console.print(f"   [bold green]📚 Knowledge Gained![/bold green]")
+            if iteration.gap_recorded:
+                console.print(f"   [bold orange3]🕳️  Knowledge Gap Recorded[/bold orange3]")
+            
             # Step G: Meta-Cognition Evaluation
-            logger.info("step_g_meta_evaluation")
             outcome = {
                 "success": iteration.verdict == "PASS",
                 "question": question,
@@ -237,6 +232,7 @@ class LearningLoop:
             logger.error("learning_step_failed", error=str(e))
             iteration.verdict = "ERROR"
             iteration.issues = [str(e)]
+            console.print(f"   [bold red]💥 Error in Learning Loop:[/bold red] {e}")
         
         # Calculate duration
         end_time = datetime.utcnow()
@@ -279,7 +275,7 @@ class LearningLoop:
         
         # Get context from memory
         memory_context = ""
-        memories = self.memory.recall("domain knowledge", limit=3)
+        memories = await self.memory.recall("domain knowledge", limit=3)
         if memories:
             memory_context = "Known facts:\n" + "\n".join([
                 str(m.content if hasattr(m, 'content') else m.answer)[:100]

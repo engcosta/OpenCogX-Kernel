@@ -10,6 +10,8 @@ Provides knowledge graph capabilities.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from typing import Optional, TYPE_CHECKING, Any
 import structlog
@@ -21,6 +23,15 @@ if TYPE_CHECKING:
 logger = structlog.get_logger()
 
 
+def content_hash(content: any) -> str:
+    """Generate a deterministic hash from content."""
+    if isinstance(content, dict):
+        content_str = json.dumps(content, sort_keys=True)
+    else:
+        content_str = str(content)
+    return hashlib.sha256(content_str.encode()).hexdigest()[:16]
+
+
 class GraphPlugin:
     """
     Graph Database Plugin using Neo4j.
@@ -30,6 +41,7 @@ class GraphPlugin:
     - Entity and relation management
     - Multi-hop reasoning paths
     - Knowledge gap detection
+    - Deduplication via content hashing
     """
     
     def __init__(
@@ -98,6 +110,8 @@ class GraphPlugin:
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE",
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (s:State) REQUIRE s.id IS UNIQUE",
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (ev:Event) REQUIRE ev.id IS UNIQUE",
+                # Add index for content_hash to speed up dedup lookups
+                "CREATE INDEX IF NOT EXISTS FOR (e:Entity) ON (e.content_hash)",
             ]
             
             for constraint in constraints:
@@ -106,6 +120,58 @@ class GraphPlugin:
                 except Exception as e:
                     logger.debug("constraint_exists_or_failed", error=str(e))
     
+    async def entity_exists(self, entity_id: str) -> bool:
+        """
+        Check if an entity already exists.
+        
+        Args:
+            entity_id: Entity ID to check
+            
+        Returns:
+            True if entity exists
+        """
+        if not self._initialized:
+            return False
+        
+        try:
+            async with self._driver.session() as session:
+                result = await session.run(
+                    "MATCH (e:Entity {id: $id}) RETURN count(e) > 0 AS exists",
+                    id=entity_id,
+                )
+                record = await result.single()
+                return record["exists"] if record else False
+        except Exception:
+            return False
+    
+    async def relation_exists(self, from_id: str, to_id: str, relation_type: str) -> bool:
+        """
+        Check if a relation already exists.
+        
+        Args:
+            from_id: Source entity ID
+            to_id: Target entity ID
+            relation_type: Relation type
+            
+        Returns:
+            True if relation exists
+        """
+        if not self._initialized:
+            return False
+        
+        try:
+            safe_relation = relation_type.upper().replace(" ", "_")
+            async with self._driver.session() as session:
+                query = f"""
+                MATCH (a:Entity {{id: $from_id}})-[r:{safe_relation}]->(b:Entity {{id: $to_id}})
+                RETURN count(r) > 0 AS exists
+                """
+                result = await session.run(query, from_id=from_id, to_id=to_id)
+                record = await result.single()
+                return record["exists"] if record else False
+        except Exception:
+            return False
+    
     async def store_entity(
         self,
         entity_id: str,
@@ -113,12 +179,12 @@ class GraphPlugin:
         properties: dict[str, Any],
     ) -> bool:
         """
-        Store an entity in the graph.
+        Store an entity in the graph with proper labels and properties.
         
         Args:
             entity_id: Unique entity identifier
-            entity_type: Type of entity (e.g., "Person", "Concept")
-            properties: Entity properties
+            entity_type: Type of entity (e.g., "Person", "Concept", "Technology")
+            properties: Entity properties (must include 'name')
             
         Returns:
             True if successful
@@ -127,22 +193,34 @@ class GraphPlugin:
             await self.initialize()
         
         try:
+            # Get entity name for display (required)
+            entity_name = properties.get("name", entity_id)
+            
+            # Sanitize entity type for use as Neo4j label
+            safe_type = entity_type.replace(" ", "_").replace("-", "_").title()
+            if not safe_type:
+                safe_type = "Entity"
+            
             async with self._driver.session() as session:
-                query = """
-                MERGE (e:Entity {id: $id})
-                SET e.type = $type,
-                    e.properties = $properties,
+                # Create node with both :Entity label and type-specific label
+                # Store name as top-level property for Neo4j Browser display
+                query = f"""
+                MERGE (e:Entity:{safe_type} {{id: $id}})
+                SET e.name = $name,
+                    e.type = $type,
+                    e.source = $source,
                     e.updated_at = datetime()
                 RETURN e
                 """
                 await session.run(
                     query,
                     id=entity_id,
+                    name=entity_name,
                     type=entity_type,
-                    properties=str(properties),
+                    source=properties.get("source", "unknown"),
                 )
                 
-            logger.debug("entity_stored", entity_id=entity_id)
+            logger.debug("entity_stored", entity_id=entity_id, name=entity_name, type=safe_type)
             return True
             
         except Exception as e:

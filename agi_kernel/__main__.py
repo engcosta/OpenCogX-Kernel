@@ -379,7 +379,7 @@ def main():
     
     # Run the appropriate command
     if args.command == "serve":
-        asyncio.run(cmd_serve(args))
+        cmd_serve(args)  # Sync - uvicorn handles its own event loop
     elif args.command == "ingest":
         asyncio.run(cmd_ingest(args))
     elif args.command == "learn":

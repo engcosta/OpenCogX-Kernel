@@ -139,7 +139,7 @@ class GoalEngine:
         
         logger.info("goal_engine_initialized")
     
-    def generate(self, memory: Memory, world: WorldModel) -> list[Goal]:
+    async def generate(self, memory: Memory, world: WorldModel) -> list[Goal]:
         """
         Generate intrinsic goals from the current state.
         
@@ -168,7 +168,7 @@ class GoalEngine:
         
         # 3. Detect knowledge gaps (from graph)
         if self.graph_plugin:
-            gap_goals = self._detect_knowledge_gaps()
+            gap_goals = await self._detect_knowledge_gaps()
             goals.extend(gap_goals)
         
         # 4. Analyze failed episodes for improvement
@@ -222,13 +222,13 @@ class GoalEngine:
         
         return goals
     
-    def _detect_knowledge_gaps(self) -> list[Goal]:
+    async def _detect_knowledge_gaps(self) -> list[Goal]:
         """Find gaps in the knowledge graph."""
         goals = []
         
         if self.graph_plugin:
             # Find entities with few relations
-            gaps = self.graph_plugin.find_knowledge_gaps()
+            gaps = await self.graph_plugin.find_knowledge_gaps()
             
             for gap in gaps[:5]:
                 goal = Goal(

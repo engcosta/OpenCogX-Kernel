@@ -227,9 +227,9 @@ class Memory:
         elif memory_type == MemoryType.TEMPORAL:
             self.temporal[item.id] = item
         
-        # Store in vector DB for semantic search
-        if self.vector_plugin:
-            self.vector_plugin.store_memory(item)
+        # Note: Vector storage is handled by the ingestion pipeline
+        # which properly awaits the async store_memory call.
+        # Don't call vector_plugin here since store() is not async.
         
         logger.info(
             "memory_stored",
@@ -286,7 +286,7 @@ class Memory:
         
         return episode
     
-    def recall(
+    async def recall(
         self,
         query: str,
         context: Optional[dict] = None,
@@ -332,7 +332,7 @@ class Memory:
         
         # Use vector search if available
         if self.vector_plugin:
-            vector_results = self.vector_plugin.search(query, limit=limit)
+            vector_results = await self.vector_plugin.search(query, limit=limit)
             # Merge with local results
             seen_ids = {r.id for r in results}
             for item in vector_results:

@@ -10,6 +10,8 @@ Provides semantic search capabilities.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from typing import Optional, TYPE_CHECKING
 import structlog
@@ -18,6 +20,15 @@ if TYPE_CHECKING:
     from agi_kernel.core.memory import MemoryItem
 
 logger = structlog.get_logger()
+
+
+def content_hash(content: any) -> str:
+    """Generate a deterministic hash from content."""
+    if isinstance(content, dict):
+        content_str = json.dumps(content, sort_keys=True)
+    else:
+        content_str = str(content)
+    return hashlib.sha256(content_str.encode()).hexdigest()[:16]
 
 
 class VectorPlugin:
@@ -142,10 +153,45 @@ class VectorPlugin:
             return await self.initialize()
         return True
     
+    async def exists(self, content_id: str) -> bool:
+        """
+        Check if content with this ID already exists.
+        
+        Args:
+            content_id: The content hash or ID to check
+            
+        Returns:
+            True if exists
+        """
+        if not self._initialized:
+            return False
+        
+        try:
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            
+            result = self._client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="content_hash",
+                            match=MatchValue(value=content_id),
+                        )
+                    ]
+                ),
+                limit=1,
+            )
+            
+            return len(result[0]) > 0
+            
+        except Exception:
+            return False
+    
     async def store_memory(
         self,
         item: MemoryItem,
         embedding: Optional[list[float]] = None,
+        skip_duplicates: bool = True,
     ) -> bool:
         """
         Store a memory item in the vector database.
@@ -153,15 +199,24 @@ class VectorPlugin:
         Args:
             item: The memory item to store
             embedding: Pre-computed embedding (optional)
+            skip_duplicates: Skip if content already exists
             
         Returns:
-            True if successful
+            True if successful, False if skipped or failed
         """
         if not self._initialized:
             await self.initialize()
         
         try:
             from qdrant_client.models import PointStruct
+            
+            # Generate content hash for deduplication
+            item_content_hash = content_hash(item.content)
+            
+            # Check for duplicates
+            if skip_duplicates and await self.exists(item_content_hash):
+                logger.debug("duplicate_skipped", content_hash=item_content_hash)
+                return False
             
             # Generate embedding if not provided
             if embedding is None and self.llm_plugin:
@@ -175,12 +230,16 @@ class VectorPlugin:
             # Ensure collection dimension matches
             await self.ensure_dimension(embedding)
             
+            # Use content hash as deterministic ID (avoids duplicates on re-insert)
+            point_id = int(hashlib.sha256(item_content_hash.encode()).hexdigest()[:15], 16)
+            
             # Create point
             point = PointStruct(
-                id=hash(item.id) % (2**63 - 1),  # Qdrant needs int64 IDs
+                id=point_id,
                 vector=embedding,
                 payload={
                     "memory_id": item.id,
+                    "content_hash": item_content_hash,
                     "type": item.type.value,
                     "content": item.content,
                     "timestamp": item.timestamp.isoformat(),
@@ -189,13 +248,13 @@ class VectorPlugin:
                 },
             )
             
-            # Upsert point
+            # Upsert point (same ID = update, not duplicate)
             self._client.upsert(
                 collection_name=self.collection_name,
                 points=[point],
             )
             
-            logger.debug("memory_stored_in_vector", item_id=item.id)
+            logger.debug("memory_stored_in_vector", item_id=item.id, content_hash=item_content_hash)
             return True
             
         except Exception as e:
@@ -248,13 +307,14 @@ class VectorPlugin:
                 )
             
             # Search
-            results = self._client.search(
+            response = self._client.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_embedding,
+                query=query_embedding,
                 limit=limit,
                 score_threshold=score_threshold,
                 query_filter=query_filter,
             )
+            results = response.points
             
             # Convert to MemoryItems
             memories = []

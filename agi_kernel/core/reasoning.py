@@ -159,13 +159,6 @@ class ReasoningController:
     ) -> tuple[ReasoningStrategy, str]:
         """
         Choose the best reasoning strategy for the context.
-        
-        Args:
-            context: The reasoning context
-            self_model: Self-knowledge about capabilities
-            
-        Returns:
-            Tuple of (chosen strategy, reason for choice)
         """
         # Analyze the question complexity
         complexity = context.complexity_estimate
@@ -176,44 +169,48 @@ class ReasoningController:
         has_vector = context.has_vector
         
         # Default strategy selection logic
-        # This can be overridden by learned patterns
-        
-        # Simple questions with memory → FAST_RECALL
         if complexity < 0.3 and has_memory:
             strategy = ReasoningStrategy.FAST_RECALL
             reason = "Low complexity question with available memory"
-        
-        # Questions about causality with graph → CAUSAL_REASONING
         elif has_graph and self._looks_causal(context.question):
             strategy = ReasoningStrategy.CAUSAL_REASONING
             reason = "Question appears causal and graph is available"
-        
-        # Questions about predictions → SIMULATION
         elif self._looks_predictive(context.question):
             strategy = ReasoningStrategy.SIMULATION
             reason = "Question asks about future outcomes"
-        
-        # Multi-step questions → MULTI_HOP
         elif complexity > 0.7 or self._looks_multi_hop(context.question):
             strategy = ReasoningStrategy.MULTI_HOP
             reason = "Complex question requiring multiple inference steps"
-        
-        # Previous failures → try different strategy
         elif context.previous_attempts > 0 and context.previous_strategy:
             strategy = self._pick_alternative(context.previous_strategy)
             reason = f"Previous attempt with {context.previous_strategy.value} failed"
-        
-        # Default to HYBRID for maximum coverage
         else:
             strategy = ReasoningStrategy.HYBRID
             reason = "Default hybrid approach for balanced reasoning"
         
-        # Apply strategy weights (from meta-cognition learning)
+        # Apply strategy weights
         weight = self.strategy_weights.get(strategy.value, 1.0)
-        if weight < 0.5:  # Strategy is discouraged
+        if weight < 0.5:
             old_strategy = strategy
             strategy = self._pick_highest_weight()
             reason = f"Strategy {old_strategy.value} discouraged, switching to {strategy.value}"
+        
+        # Rich console log
+        from rich.console import Console
+        from rich.text import Text
+        console = Console()
+        
+        strategy_color = {
+            "fast_recall": "blue",
+            "causal_reasoning": "magenta",
+            "simulation": "cyan",
+            "verification": "green",
+            "multi_hop": "yellow",
+            "hybrid": "white",
+        }.get(strategy.value, "white")
+        
+        console.print(f"\n[bold]🧠 Reasoning Strategy Selected:[/bold] [{strategy_color}]{strategy.value.upper()}[/{strategy_color}]")
+        console.print(f"   [dim]Reason: {reason}[/dim]")
         
         logger.info(
             "reasoning_strategy_chosen",
@@ -256,7 +253,7 @@ class ReasoningController:
             key=lambda x: x[1]
         )
         return ReasoningStrategy(best[0])
-    
+
     async def execute(
         self,
         strategy: ReasoningStrategy,
@@ -267,16 +264,6 @@ class ReasoningController:
     ) -> dict:
         """
         Execute reasoning with the chosen strategy.
-        
-        Args:
-            strategy: The reasoning strategy to use
-            question: The question to answer
-            context: Additional context
-            memory: Memory system for recall
-            world: World model for prediction
-            
-        Returns:
-            Dict with answer, confidence, and metadata
         """
         start_time = datetime.utcnow()
         reason = context.get("strategy_reason", "unknown")
@@ -287,6 +274,18 @@ class ReasoningController:
             reason=reason,
             context=context,
         )
+        
+        # Rich console log
+        from rich.console import Console
+        from rich.panel import Panel
+        console = Console()
+        
+        console.print(Panel(
+            f"[bold {strategy.value == 'fast_recall' and 'blue' or 'magenta'}]{question}[/]",
+            title=f"🤔 Executing: {strategy.value}",
+            border_style="dim",
+            expand=False
+        ))
         
         try:
             # Execute based on strategy
@@ -312,6 +311,13 @@ class ReasoningController:
             decision.confidence = result.get("confidence", 0.0)
             decision.output = result.get("answer")
             
+            # Rich log result
+            if decision.success:
+                console.print(f"   ✅ [green]Answer Generated[/green] (Conf: {decision.confidence:.2f})")
+                console.print(f"      [dim]{str(decision.output)[:100]}...[/dim]")
+            else:
+                console.print(f"   ❌ [red]Failed to Answer[/red]")
+            
         except Exception as e:
             logger.error("reasoning_execution_failed", error=str(e))
             result = {
@@ -321,6 +327,7 @@ class ReasoningController:
                 "error": str(e),
             }
             decision.success = False
+            console.print(f"   ❌ [red]Error:[/red] {str(e)}")
         
         # Calculate duration
         end_time = datetime.utcnow()
@@ -352,7 +359,7 @@ class ReasoningController:
             return {"success": False, "answer": None, "confidence": 0.0}
         
         # Recall relevant memories
-        memories = memory.recall(question, limit=5)
+        memories = await memory.recall(question, limit=5)
         
         if not memories:
             return {"success": False, "answer": None, "confidence": 0.0}
@@ -518,7 +525,7 @@ class ReasoningController:
             return {"success": False, "answer": None, "confidence": 0.0}
         
         # Find similar past episodes
-        episodes = memory.recall(question)
+        episodes = await memory.recall(question)
         
         if not episodes:
             return {"success": False, "answer": None, "confidence": 0.0}
