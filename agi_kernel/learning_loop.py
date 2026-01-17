@@ -474,7 +474,7 @@ Question:"""
             
             # Complete the goal
             if goal:
-                self.goals.complete_goal(goal.id, actual_gain=0.5, success=True)
+                await self.goals.complete_goal(goal.id, actual_gain=0.5, success=True)
                 
         elif iteration.verdict == "FAIL":
             # Record failure for learning
@@ -492,7 +492,7 @@ Question:"""
             if goal:
                 goal.attempts += 1
                 if goal.attempts >= goal.max_attempts:
-                    self.goals.complete_goal(goal.id, actual_gain=0.0, success=False)
+                    await self.goals.complete_goal(goal.id, actual_gain=0.0, success=False)
                     
         else:  # PARTIAL
             self.memory.store_episode(
@@ -558,23 +558,32 @@ Return ONLY the triples, one per line.
                         "from_type": subj_type,
                         "rel": rel,
                         "to_id": obj_id,
-                        "to_name": obj
+                        "to_name": obj,
+                        "content": iteration.answer,
+                        "question": iteration.question
                     })
 
             # 2. Store in Graph (Neo4j)
             count_nodes = 0
             count_rels = 0
             for t in triples:
-                # Ensure entities exist
+                # Prepare base properties with content/context
+                base_props = {
+                    "source": "learning_loop",
+                    "content": t.get("content", ""),
+                    "learned_from_question": t.get("question", "")
+                }
+
+                # Ensure entities exist with rich properties
                 await self.graph.store_entity(
                     entity_id=t["from_id"],
                     entity_type=t["from_type"],
-                    properties={"name": t["from_name"], "source": "learning_loop"}
+                    properties={**base_props, "name": t["from_name"]}
                 )
                 await self.graph.store_entity(
                     entity_id=t["to_id"],
                     entity_type="CONCEPT", # Default type for object if unknown
-                    properties={"name": t["to_name"], "source": "learning_loop"}
+                    properties={**base_props, "name": t["to_name"]}
                 )
                 
                 # Store relation

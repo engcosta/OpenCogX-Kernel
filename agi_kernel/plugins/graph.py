@@ -201,25 +201,33 @@ class GraphPlugin:
             if not safe_type:
                 safe_type = "Entity"
             
+            # Prepare properties to store (dynamic)
+            node_props = properties.copy()
+            node_props.update({
+                "name": entity_name,
+                "type": entity_type,
+                "source": properties.get("source", "unknown"),
+            })
+            
+            # Exclude id from props if it matches to avoid duplication/confusion
+            if "id" in node_props:
+                del node_props["id"]
+
             async with self._driver.session() as session:
                 # Create node with both :Entity label and type-specific label
-                # Store name as top-level property for Neo4j Browser display
+                # Use += to dynamically set all properties from the dict
                 query = f"""
                 MERGE (e:Entity:{safe_type} {{id: $id}})
-                SET e.name = $name,
-                    e.type = $type,
-                    e.source = $source,
+                SET e += $props,
                     e.updated_at = datetime()
                 RETURN e
                 """
                 await session.run(
                     query,
                     id=entity_id,
-                    name=entity_name,
-                    type=entity_type,
-                    source=properties.get("source", "unknown"),
+                    props=node_props,
                 )
-                
+            
             logger.debug("entity_stored", entity_id=entity_id, name=entity_name, type=safe_type)
             return True
             
@@ -328,26 +336,38 @@ class GraphPlugin:
             await self.initialize()
         
         try:
-            event_name = f"Event: {event.action}"
+            # Improve naming for specific events
+            if event.action == "ingest_file" and isinstance(event.context, dict) and "file" in event.context:
+                 event_name = f"Ingestion: {event.context['file']}"
+            else:
+                 event_name = f"Event: {event.action}"
             
+            # Prepare properties
+            event_props = {
+                "actor": event.actor,
+                "action": event.action,
+                "name": event_name,
+                "timestamp": event.timestamp.isoformat(),
+            }
+            
+            # Flatten context properties into top-level props
+            if isinstance(event.context, dict):
+                for k, v in event.context.items():
+                    # Validate keys to avoid collisions or reserved words if needed
+                    event_props[k] = v
+            else:
+                event_props["context"] = str(event.context)
+
             async with self._driver.session() as session:
                 query = """
                 MERGE (ev:Event {id: $id})
-                SET ev.actor = $actor,
-                    ev.action = $action,
-                    ev.context = $context,
-                    ev.timestamp = $timestamp,
-                    ev.name = $name
+                SET ev += $props
                 RETURN ev
                 """
                 await session.run(
                     query,
                     id=event.id,
-                    actor=event.actor,
-                    action=event.action,
-                    context=str(event.context),
-                    timestamp=event.timestamp.isoformat(),
-                    name=event_name,
+                    props=event_props,
                 )
                 
             logger.debug("event_stored", event_id=event.id)

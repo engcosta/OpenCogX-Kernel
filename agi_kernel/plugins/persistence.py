@@ -199,11 +199,11 @@ class PersistencePlugin:
             
             query = """
                 INSERT INTO learning_history (
-                    id, timestamp, goal_id, question, question_type, 
+                    timestamp, goal_id, question, question_type, 
                     answer, strategy, verdict, confidence, duration_ms, 
                     knowledge_gained, gap_recorded, issues
                 ) VALUES (
-                    :id, :timestamp, :goal_id, :question, :question_type, 
+                    :timestamp, :goal_id, :question, :question_type, 
                     :answer, :strategy, :verdict, :confidence, :duration_ms, 
                     :knowledge_gained, :gap_recorded, :issues
                 )
@@ -265,6 +265,22 @@ class PersistencePlugin:
             }
         except Exception as e:
             return {"status": "error", "error": str(e)}
+
+    async def clear_all_data(self) -> bool:
+        """Clear all data from the database."""
+        if not self._initialized or not self._db:
+            return False
+            
+        try:
+            await self._db.execute("DELETE FROM goals")
+            await self._db.execute("DELETE FROM learning_history")
+            await self._db.execute("DELETE FROM world_events")
+            await self._db.commit()
+            logger.info("persistence_data_cleared")
+            return True
+        except Exception as e:
+            logger.error("persistence_clear_failed", error=str(e))
+            return False
 
     async def close(self):
         """Close the database connection."""

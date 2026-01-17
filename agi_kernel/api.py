@@ -250,6 +250,13 @@ async def clean_databases(request: CleanRequest):
             except Exception as v_err:
                 logger.warning("vector_clear_failed", error=str(v_err))
 
+        # Clear SQL Persistence
+        if kernel.persistence:
+            try:
+                await kernel.persistence.clear_all_data()
+            except Exception as p_err:
+                logger.warning("persistence_clear_failed", error=str(p_err))
+
         logger.info("databases_cleared_via_api")
         return {"status": "success", "message": "Databases cleared successfully"}
         
