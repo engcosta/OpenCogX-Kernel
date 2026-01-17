@@ -173,7 +173,7 @@ class WorldModel:
         
         logger.info("world_model_initialized")
     
-    def observe(self, event: Event) -> State:
+    async def observe(self, event: Event) -> State:
         """
         Process an event and return the resulting state.
         
@@ -208,9 +208,10 @@ class WorldModel:
         )
         
         # Persist to graph if available
+        # Persist to graph if available
         if self.graph_plugin:
-            self.graph_plugin.store_state(new_state)
-            self.graph_plugin.store_event(event)
+            await self.graph_plugin.store_state(new_state)
+            await self.graph_plugin.store_event(event)
         
         return new_state
     
@@ -263,7 +264,7 @@ class WorldModel:
         
         return predictions
     
-    def record_transition(
+    async def record_transition(
         self,
         from_state: State,
         to_state: State,
@@ -319,8 +320,9 @@ class WorldModel:
             self.states[to_state.id] = to_state
         
         # Persist to graph if available
+        # Persist to graph if available
         if self.graph_plugin:
-            self.graph_plugin.store_transition(transition)
+            await self.graph_plugin.store_transition(transition)
         
         logger.info(
             "world_transition_recorded",

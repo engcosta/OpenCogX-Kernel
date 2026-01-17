@@ -424,6 +424,11 @@ Question:"""
             )
             iteration.knowledge_gained = True
             
+            # CRITICAL: Consolidate knowledge into long-term memory (Graph & Vector)
+            # This ensures the graph evolves over time.
+            if self.graph and self.llm:
+                await self._consolidate_knowledge(iteration)
+            
             # Complete the goal
             if goal:
                 self.goals.complete_goal(goal.id, actual_gain=0.5, success=True)
@@ -455,6 +460,112 @@ Question:"""
                 confidence=iteration.confidence * 0.5,  # Lower confidence
             )
             iteration.knowledge_gained = True
+            
+            # Also attempt to consolidate partial knowledge if high enough quality
+            if iteration.confidence > 0.6 and self.graph and self.llm:
+                await self._consolidate_knowledge(iteration)
+
+    async def _consolidate_knowledge(self, iteration: LoopIteration) -> None:
+        """
+        Extract entities and relations from the learned answer and persist to Graph & Vector.
+        """
+        try:
+            from rich import print as rprint
+            rprint("[dim]   ... Consolidating new knowledge into Graph & VectorDB ...[/dim]")
+            
+            # 1. Extract Triples using LLM
+            prompt = f"""Analyze this Q&A pair and extract new knowledge as strict triples.
+            
+Question: {iteration.question}
+Answer: {iteration.answer}
+
+Extract 3-5 key relations that explain this answer.
+Format: SUBJECT | RELATION | OBJECT | TYPE
+- SUBJECT/OBJECT: The entity names (e.g., "Leaderless Replication", "Quorum")
+- RELATION: The relationship (e.g., "uses", "requires", "improves", "avoids")
+- TYPE: The type of the subject entity (e.g., "CONCEPT", "TECHNOLOGY", "ALGORITHM")
+
+Examples:
+Leaderless Replication | uses | Read Repair | CONCEPT
+Dynamo | implements | Leaderless Replication | TECHNOLOGY
+
+Return ONLY the triples, one per line.
+"""
+            extraction = await self.llm.generate(
+                prompt=prompt,
+                model_type="solver",
+            )
+            
+            triples = []
+            for line in extraction.strip().split('\n'):
+                parts = line.split('|')
+                if len(parts) >= 4:
+                    subj = parts[0].strip()
+                    rel = parts[1].strip().upper().replace(' ', '_')
+                    obj = parts[2].strip()
+                    subj_type = parts[3].strip().upper()
+                    
+                    # Create IDs
+                    subj_id = subj.lower().replace(' ', '_')
+                    obj_id = obj.lower().replace(' ', '_')
+                    
+                    triples.append({
+                        "from_id": subj_id,
+                        "from_name": subj,
+                        "from_type": subj_type,
+                        "rel": rel,
+                        "to_id": obj_id,
+                        "to_name": obj
+                    })
+
+            # 2. Store in Graph (Neo4j)
+            count_nodes = 0
+            count_rels = 0
+            for t in triples:
+                # Ensure entities exist
+                await self.graph.store_entity(
+                    entity_id=t["from_id"],
+                    entity_type=t["from_type"],
+                    properties={"name": t["from_name"], "source": "learning_loop"}
+                )
+                await self.graph.store_entity(
+                    entity_id=t["to_id"],
+                    entity_type="CONCEPT", # Default type for object if unknown
+                    properties={"name": t["to_name"], "source": "learning_loop"}
+                )
+                
+                # Store relation
+                await self.graph.store_relation(
+                    from_entity=t["from_id"],
+                    to_entity=t["to_id"],
+                    relation_type=t["rel"],
+                    properties={"confidence": iteration.confidence, "source": "learning_loop"}
+                )
+                count_nodes += 2
+                count_rels += 1
+                
+            rprint(f"[dim]   ... Graph Updated: +{count_rels} relations[/dim]")
+
+            # 3. Store in Vector DB (Qdrant) - Create a specific "insight" memory
+            if self.vector:
+                from agi_kernel.core.memory import MemoryItem, MemoryType
+                
+                content_text = f"Question: {iteration.question}\nAnswer: {iteration.answer}"
+                embedding = await self.llm.embed(content_text)
+                
+                item = MemoryItem(
+                    type=MemoryType.SEMANTIC,
+                    content={"text": content_text, "source": "learning_insight"},
+                    source="learning_loop",
+                    confidence=iteration.confidence
+                )
+                
+                await self.vector.store_memory(item, embedding=embedding)
+                rprint(f"[dim]   ... Vector Updated: +1 insight[/dim]")
+
+        except Exception as e:
+            logger.error("knowledge_consolidation_failed", error=str(e))
+            rprint(f"[red]   Failed to consolidate knowledge: {e}[/red]")
     
     async def run(
         self,

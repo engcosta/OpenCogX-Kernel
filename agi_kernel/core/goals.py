@@ -135,9 +135,20 @@ class GoalEngine:
         self.active_goals: dict[str, Goal] = {}
         self.completed_goals: list[Goal] = []
         self.failed_goals: list[Goal] = []
+        self.manual_goals: list[Goal] = []
         self.graph_plugin = graph_plugin
         
         logger.info("goal_engine_initialized")
+
+    def add(self, goal: Goal) -> None:
+        """
+        Add a manual goal to the engine.
+        
+        Args:
+            goal: The goal to add
+        """
+        self.manual_goals.append(goal)
+        logger.info("manual_goal_added", goal_id=goal.id, description=goal.description)
     
     async def generate(self, memory: Memory, world: WorldModel) -> list[Goal]:
         """
@@ -157,6 +168,13 @@ class GoalEngine:
             List of generated goals
         """
         goals: list[Goal] = []
+        
+        # 0. Include pending manual goals
+        for goal in self.manual_goals:
+            if goal.status == "pending":
+                # Boost priority of manual goals to ensure they are picked
+                goal.priority = max(goal.priority, 1.0)
+                goals.append(goal)
         
         # 1. Detect uncertainty (low confidence states)
         uncertainty_goals = self._detect_uncertainty(world)

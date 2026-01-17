@@ -194,7 +194,6 @@ Example: protocol, algorithm, consistency_model, replication_strategy, failure_m
             
             response = await self.llm.generate(
                 prompt=prompt,
-                model_type="quick",
                 temperature=0.3,
             )
             
@@ -401,7 +400,7 @@ Example: protocol, algorithm, consistency_model, replication_strategy, failure_m
                 "relations": len(relations),
             },
         )
-        self.world.observe(event)
+        await self.world.observe(event)
         
         logger.info(
             "file_ingested",
