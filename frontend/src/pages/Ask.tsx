@@ -278,7 +278,7 @@ export function Ask() {
                                                 {msg.metadata.context && msg.metadata.context.length > 0 && (
                                                     <span
                                                         className="meta-item clickable"
-                                                        onClick={() => setSelectedContext(msg.metadata.context || null)}
+                                                        onClick={() => setSelectedContext(msg.metadata?.context || null)}
                                                         title="Click to view sources"
                                                     >
                                                         <BookOpen size={12} />

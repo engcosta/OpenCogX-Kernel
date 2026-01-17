@@ -41,6 +41,8 @@ export function Goals() {
     };
 
     const getStateIcon = (state: string) => {
+        if (!state) return <Flag size={16} />;
+
         switch (state.toLowerCase()) {
             case 'completed':
                 return <CheckCircle size={16} className="icon-success" />;
