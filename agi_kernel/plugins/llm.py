@@ -254,7 +254,12 @@ class LLMPlugin:
             response.raise_for_status()
             
             data = response.json()
-            embeddings = data.get("embeddings", [[]])[0]
+            embeddings_list = data.get("embeddings", [])
+            if not embeddings_list:
+                logger.warning("no_embeddings_returned", model=model, text=text[:50])
+                return []
+                
+            embeddings = embeddings_list[0]
             
             logger.debug(
                 "embedding_generated",

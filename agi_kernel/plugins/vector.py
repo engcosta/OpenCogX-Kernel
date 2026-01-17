@@ -294,6 +294,21 @@ class VectorPlugin:
             # Generate query embedding
             query_embedding = await self.llm_plugin.embed(query)
             
+            if not query_embedding:
+                logger.warning("empty_query_embedding")
+                return []
+                
+            # Check for dimension mismatch
+            if len(query_embedding) != self.vector_size:
+                logger.error(
+                    "vector_dimension_mismatch_in_search",
+                    expected=self.vector_size,
+                    actual=len(query_embedding),
+                    query=query[:20]
+                )
+                # Cannot search if dimensions mismatch
+                return []
+            
             # Build filter if type specified
             query_filter = None
             if filter_type:

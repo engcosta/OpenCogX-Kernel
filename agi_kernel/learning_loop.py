@@ -228,6 +228,10 @@ class LearningLoop:
             }
             self.meta.evaluate(outcome, self.memory, self.reasoning)
             
+            self.meta.evaluate(outcome, self.memory, self.reasoning)
+            
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logger.error("learning_step_failed", error=str(e))
             iteration.verdict = "ERROR"
@@ -273,32 +277,55 @@ class LearningLoop:
             else:
                 goal_context = goal.description
         
-        # Get context from memory
-        memory_context = ""
-        memories = await self.memory.recall("domain knowledge", limit=3)
-        if memories:
-            memory_context = "Known facts:\n" + "\n".join([
-                str(m.content if hasattr(m, 'content') else m.answer)[:100]
-                for m in memories
-            ])
+        # Get context to anchor the question
+        context_anchors = []
         
-        prompt = f"""Generate a thoughtful, multi-hop reasoning question.
+        # 1. Try to get entities from Graph (best for domain grounding)
+        if self.graph:
+            # Fetch random entities to anchor the question
+            entities = await self.graph.run_cypher(
+                "MATCH (n:Entity) WITH n, rand() AS r ORDER BY r LIMIT 3 RETURN n.name, n.type"
+            )
+            if entities:
+                context_anchors.append("Key Concepts from Knowledge Graph:")
+                for e in entities:
+                    context_anchors.append(f"- {e['n.name']} ({e['n.type']})")
 
+        # 2. If no graph anchors, try Vector memory with a generic query but strict filter
+        if not context_anchors and self.memory:
+            memories = await self.memory.recall("important concepts", limit=3)
+            if memories:
+                context_anchors.append("Known Memory Items:")
+                for m in memories:
+                    content = str(m.content if hasattr(m, 'content') else m.answer)
+                    context_anchors.append(f"- {content[:150]}...")
+
+        anchor_text = "\n".join(context_anchors)
+        
+        # Fallback if knowledge base is completely empty
+        if not anchor_text:
+            anchor_text = "Domain: General Logic and Reasoning (No specific domain knowledge found yet)"
+
+        prompt = f"""Generate a thoughtful, multi-hop reasoning question based strictly on the available domain knowledge.
+        
+CONTEXT:
 {goal_context}
 
-{memory_context}
+AVAILABLE KNOWLEDGE (ANCHORS):
+{anchor_text}
 
-Generate ONE question that:
-- Requires connecting multiple pieces of information
-- Explores relationships or causality
-- Helps fill knowledge gaps
+INSTRUCTIONS:
+1. Generate ONE question that explores the relationships between the 'Key Concepts' listed above.
+2. CRITICAL: Do NOT hallucinate topics outside the provided context (e.g., do not ask about molecular biology if the context is about databases).
+3. If the context contains specific technical terms, USE THEM.
+4. The question should target understanding 'how' or 'why' these concepts interact.
 
 Question:"""
         
         question = await self.llm.generate(
             prompt=prompt,
             model_type="reasoning",
-            temperature=0.8,
+            temperature=0.7,
         )
         
         return question.strip()
@@ -607,6 +634,10 @@ Return ONLY the triples, one per line.
                 if i < iterations - 1:
                     await asyncio.sleep(interval_seconds)
                     
+            except asyncio.CancelledError:
+                logger.warning("learning_loop_cancelled")
+                self.running = False
+                raise
             except Exception as e:
                 logger.error("loop_iteration_error", iteration=i, error=str(e))
         
