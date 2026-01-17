@@ -287,13 +287,22 @@ class GraphPlugin:
             await self.initialize()
         
         try:
+            # Create meaningful name for display
+            try:
+                features_dict = eval(str(state.features)) if isinstance(state.features, str) else state.features
+                action_name = features_dict.get("action", "Unknown")
+                state_name = f"State: {action_name}"
+            except:
+                state_name = "State"
+
             async with self._driver.session() as session:
                 query = """
                 MERGE (s:State {id: $id})
                 SET s.features = $features,
                     s.timestamp = $timestamp,
                     s.confidence = $confidence,
-                    s.source = $source
+                    s.source = $source,
+                    s.name = $name
                 RETURN s
                 """
                 await session.run(
@@ -303,6 +312,7 @@ class GraphPlugin:
                     timestamp=state.timestamp.isoformat(),
                     confidence=state.confidence,
                     source=state.source,
+                    name=state_name,
                 )
                 
             logger.debug("state_stored", state_id=state.id)
@@ -318,13 +328,16 @@ class GraphPlugin:
             await self.initialize()
         
         try:
+            event_name = f"Event: {event.action}"
+            
             async with self._driver.session() as session:
                 query = """
                 MERGE (ev:Event {id: $id})
                 SET ev.actor = $actor,
                     ev.action = $action,
                     ev.context = $context,
-                    ev.timestamp = $timestamp
+                    ev.timestamp = $timestamp,
+                    ev.name = $name
                 RETURN ev
                 """
                 await session.run(
@@ -334,6 +347,7 @@ class GraphPlugin:
                     action=event.action,
                     context=str(event.context),
                     timestamp=event.timestamp.isoformat(),
+                    name=event_name,
                 )
                 
             logger.debug("event_stored", event_id=event.id)
